@@ -158,3 +158,47 @@ func TestMultiIndexKeys(t *testing.T) {
 		}
 	}
 }
+
+func TestMultiIndexKeysSample(t *testing.T) {
+	index := NewIndexer(MetaNamespaceKeyFunc, Indexers{"byUser": testUsersIndexFunc})
+	
+	pod1 := &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "one", Annotations: map[string]string{"users": "ernie,bert"}}}
+	pod2 := &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "two", Annotations: map[string]string{"users": "bert,oscar"}}}
+	pod3 := &v1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "tre", Annotations: map[string]string{"users": "ernie,elmo"}}}
+	
+	index.Add(pod1)
+	index.Add(pod2)
+	index.Add(pod3)
+	
+	pod4 := pod3.DeepCopy()
+	pod4.Name = "-canary"
+	pod4.Annotations["canary"] = "true"
+	pod4.Annotations["canary-weight"] = "10"
+	/*
+		copyOfPod2 := pod2.DeepCopy()
+		copyOfPod2.Annotations["users"] = "oscar"
+	*/
+	
+	//expected := map[string]sets.String{}
+	//expected["ernie"] = sets.NewString("one", "tre")
+	//expected["bert"] = sets.NewString("one", "two")
+	//expected["elmo"] = sets.NewString("tre")
+	//expected["oscar"] = sets.NewString("two")
+	//expected["elmo1"] = sets.NewString()
+	
+	indexResults, err := index.ByIndex("byUser", "ernie")
+	//indexResults, err := index.ByIndex("byUser", "oscar")
+	//indexResults, err := index.ByIndex("byUser", "xx")
+	if err != nil {
+		t.Errorf("Unexpected error %v", err)
+	}
+	for _, item := range indexResults {
+		//found.Insert(item.(*v1.Pod).Name)
+		wlPod, ok := item.(*v1.Pod)
+		if !ok {
+			t.Fatalf(err.Error())
+		}
+		t.Logf("pod: %+v\n", wlPod.Name)
+	}
+	
+}

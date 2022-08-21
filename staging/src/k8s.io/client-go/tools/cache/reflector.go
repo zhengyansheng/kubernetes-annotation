@@ -25,7 +25,7 @@ import (
 	"reflect"
 	"sync"
 	"time"
-
+	
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -49,7 +49,7 @@ const defaultExpectedTypeName = "<unspecified>"
 type Reflector struct {
 	// name identifies this reflector. By default it will be a file:line if possible.
 	name string
-
+	
 	// The name of the type we expect to place in the store. The name
 	// will be the stringification of expectedGVK if provided, and the
 	// stringification of expectedType otherwise. It is for display
@@ -66,14 +66,14 @@ type Reflector struct {
 	store Store
 	// listerWatcher is used to perform lists and watches.
 	listerWatcher ListerWatcher
-
+	
 	// backoff manages backoff of ListWatch
 	backoffManager wait.BackoffManager
 	// initConnBackoffManager manages backoff the initial connection with the Watch call of ListAndWatch.
 	initConnBackoffManager wait.BackoffManager
 	// MaxInternalErrorRetryDuration defines how long we should retry internal errors returned by watch.
 	MaxInternalErrorRetryDuration time.Duration
-
+	
 	resyncPeriod time.Duration
 	// ShouldResync is invoked periodically and whenever it returns `true` the Store's Resync operation is invoked
 	ShouldResync func() bool
@@ -195,9 +195,9 @@ func (r *Reflector) setExpectedType(expectedType interface{}) {
 		r.expectedTypeName = defaultExpectedTypeName
 		return
 	}
-
+	
 	r.expectedTypeName = r.expectedType.String()
-
+	
 	if obj, ok := expectedType.(*unstructured.Unstructured); ok {
 		// Use gvk to check that watch event objects are of the desired type.
 		gvk := obj.GroupVersionKind()
@@ -230,7 +230,7 @@ func (r *Reflector) Run(stopCh <-chan struct{}) {
 var (
 	// nothing will ever be sent down this channel
 	neverExitWatch <-chan time.Time = make(chan time.Time)
-
+	
 	// Used to indicate that watching stopped because of a signal from the stop
 	// channel passed in from a client of the reflector.
 	errorStopRequested = errors.New("stop requested")
@@ -253,14 +253,21 @@ func (r *Reflector) resyncChan() (<-chan time.Time, func() bool) {
 // ListAndWatch first lists all items and get the resource version at the moment of call,
 // and then use the resource version to watch.
 // It returns error if ListAndWatch didn't even try to initialize watch.
+/*
+ListAndWatch 首先列出所有的项目，并在调用时获取 resource version，然后使用resource version 进行watch
+
+*/
 func (r *Reflector) ListAndWatch(stopCh <-chan struct{}) error {
 	klog.V(3).Infof("Listing and watching %v from %s", r.expectedTypeName, r.name)
-
+	
+	/*
+		列出所有的项目
+	*/
 	err := r.list(stopCh)
 	if err != nil {
 		return err
 	}
-
+	
 	resyncerrc := make(chan error, 1)
 	cancelCh := make(chan struct{})
 	defer close(cancelCh)
@@ -288,7 +295,7 @@ func (r *Reflector) ListAndWatch(stopCh <-chan struct{}) error {
 			resyncCh, cleanup = r.resyncChan()
 		}
 	}()
-
+	
 	retry := NewRetryWithDeadline(r.MaxInternalErrorRetryDuration, time.Minute, apierrors.IsInternalError, r.clock)
 	for {
 		// give the stopCh a chance to stop the loop, even in case of continue statements further down on errors
@@ -297,7 +304,7 @@ func (r *Reflector) ListAndWatch(stopCh <-chan struct{}) error {
 			return nil
 		default:
 		}
-
+		
 		timeoutSeconds := int64(minWatchTimeout.Seconds() * (rand.Float64() + 1.0))
 		options := metav1.ListOptions{
 			ResourceVersion: r.LastSyncResourceVersion(),
@@ -309,9 +316,10 @@ func (r *Reflector) ListAndWatch(stopCh <-chan struct{}) error {
 			// watch bookmarks, it will ignore this field).
 			AllowWatchBookmarks: true,
 		}
-
+		
 		// start the clock before sending the request, since some proxies won't flush headers until after the first watch event is sent
 		start := r.clock.Now()
+		// watch 资源的变化，参数options
 		w, err := r.listerWatcher.Watch(options)
 		if err != nil {
 			// If this is "connection refused" error, it means that most likely apiserver is not responsive.
@@ -325,7 +333,7 @@ func (r *Reflector) ListAndWatch(stopCh <-chan struct{}) error {
 			}
 			return err
 		}
-
+		
 		err = watchHandler(start, w, r.store, r.expectedType, r.expectedGVK, r.name, r.expectedTypeName, r.setLastSyncResourceVersion, r.clock, resyncerrc, stopCh)
 		retry.After(err)
 		if err != nil {
@@ -357,7 +365,7 @@ func (r *Reflector) ListAndWatch(stopCh <-chan struct{}) error {
 func (r *Reflector) list(stopCh <-chan struct{}) error {
 	var resourceVersion string
 	options := metav1.ListOptions{ResourceVersion: r.relistResourceVersion()}
-
+	
 	initTrace := trace.New("Reflector ListAndWatch", trace.Field{Key: "name", Value: r.name})
 	defer initTrace.LogIfLong(10 * time.Second)
 	var list runtime.Object
@@ -398,7 +406,7 @@ func (r *Reflector) list(stopCh <-chan struct{}) error {
 			// we don't introduce regression.
 			pager.PageSize = 0
 		}
-
+		
 		list, paginatedResult, err = pager.List(context.Background(), options)
 		if isExpiredError(err) || isTooLargeResourceVersionError(err) {
 			r.setIsLastSyncResourceVersionUnavailable(true)
@@ -424,7 +432,7 @@ func (r *Reflector) list(stopCh <-chan struct{}) error {
 		klog.Warningf("%s: failed to list %v: %v", r.name, r.expectedTypeName, err)
 		return fmt.Errorf("failed to list %v: %w", r.expectedTypeName, err)
 	}
-
+	
 	// We check if the list was paginated and if so set the paginatedResult based on that.
 	// However, we want to do that only for the initial list (which is the only case
 	// when we set ResourceVersion="0"). The reasoning behind it is that later, in some
@@ -438,7 +446,7 @@ func (r *Reflector) list(stopCh <-chan struct{}) error {
 	if options.ResourceVersion == "0" && paginatedResult {
 		r.paginatedResult = true
 	}
-
+	
 	r.setIsLastSyncResourceVersionUnavailable(false) // list was successful
 	listMetaInterface, err := meta.ListAccessor(list)
 	if err != nil {
@@ -483,7 +491,7 @@ func watchHandler(start time.Time,
 	stopCh <-chan struct{},
 ) error {
 	eventCount := 0
-
+	
 	// Stopping the watcher should be idempotent and if we return from this function there's no way
 	// we're coming back in with the same watch interface.
 	defer w.Stop()
@@ -551,7 +559,7 @@ loop:
 			eventCount++
 		}
 	}
-
+	
 	watchDuration := clock.Since(start)
 	if watchDuration < 1*time.Second && eventCount == 0 {
 		return fmt.Errorf("very short watch: %s: Unexpected watch close - watch lasted less than a second and no items received", name)
@@ -582,7 +590,7 @@ func (r *Reflector) setLastSyncResourceVersion(v string) {
 func (r *Reflector) relistResourceVersion() string {
 	r.lastSyncResourceVersionMutex.RLock()
 	defer r.lastSyncResourceVersionMutex.RUnlock()
-
+	
 	if r.isLastSyncResourceVersionUnavailable {
 		// Since this reflector makes paginated list requests, and all paginated list requests skip the watch cache
 		// if the lastSyncResourceVersion is unavailable, we set ResourceVersion="" and list again to re-establish reflector

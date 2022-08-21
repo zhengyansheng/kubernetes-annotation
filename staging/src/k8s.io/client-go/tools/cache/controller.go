@@ -62,6 +62,9 @@ type Config struct {
 	// whether to Resync the Queue. If ShouldResync is `nil` or
 	// returns true, it means the reflector should proceed with the
 	// resync.
+	/*
+		如果函数返回 nil/true 时，重新同步数据
+	*/
 	ShouldResync ShouldResyncFunc
 	
 	// If true, when Process() returns an error, re-enqueue the object.
@@ -88,10 +91,10 @@ type ProcessFunc func(obj interface{}) error
 
 // `*controller` implements Controller
 type controller struct {
-	config         Config
-	reflector      *Reflector
-	reflectorMutex sync.RWMutex
-	clock          clock.Clock
+	config         Config       // 配置
+	reflector      *Reflector   // 反射器
+	reflectorMutex sync.RWMutex // 读写锁
+	clock          clock.Clock  // 时钟
 }
 
 // Controller is a low-level controller that is parameterized by a
@@ -103,26 +106,38 @@ type Controller interface {
 	// on that Queue.  The other is to repeatedly Pop from the Queue
 	// and process with the Config's ProcessFunc.  Both of these
 	// continue until `stopCh` is closed.
-	// 核心入口函数
+	/*
+		核心函数
+		1) 创建和运行 reflector，执行 ListerWatcher 并add对象和通知到Queue队列中；偶尔重新同步
+		2）反复的从 Queue 队列中 pop对象交给 ProcessFunc 函数执行
+	*/
 	Run(stopCh <-chan struct{})
 	
 	// HasSynced delegates to the Config's Queue
-	// apiserver的对象是否已经同步到store中了
+	/*
+		apiserver的对象是否已经同步到Store中了
+	*/
 	HasSynced() bool
 	
 	// LastSyncResourceVersion delegates to the Reflector when there
 	// is one, otherwise returns the empty string
-	// 最新的资源版本号
+	/*
+		最新同步资源版本号，1或者空
+	*/
 	LastSyncResourceVersion() string
 }
 
 // New makes a new Controller from the given Config.
 func New(c *Config) Controller {
-	ctlr := &controller{
+	return &controller{
 		config: *c,
 		clock:  &clock.RealClock{},
 	}
-	return ctlr
+	//ctlr := &controller{
+	//	config: *c,
+	//	clock:  &clock.RealClock{},
+	//}
+	//return ctlr
 }
 
 // Run begins processing items, and will continue until a value is sent down stopCh or it is closed.
@@ -138,7 +153,7 @@ func (c *controller) Run(stopCh <-chan struct{}) {
 	r := NewReflector(
 		c.config.ListerWatcher,
 		c.config.ObjectType,
-		c.config.Queue,
+		c.config.Queue,            // 队列，数据写到queue中
 		c.config.FullResyncPeriod, // 全量同步周期
 	)
 	r.ShouldResync = c.config.ShouldResync
@@ -149,6 +164,7 @@ func (c *controller) Run(stopCh <-chan struct{}) {
 	}
 	
 	c.reflectorMutex.Lock()
+	// 赋值 reflect obj 到 controller, 这样 controller 可以直接操作 reflect所有属性和方法
 	c.reflector = r
 	c.reflectorMutex.Unlock()
 	

@@ -47,7 +47,7 @@ func IsConnectionReset(err error) bool {
 	return false
 }
 
-// Returns if the given err is "connection refused" error
+// IsConnectionRefused Returns if the given err is "connection refused" error
 func IsConnectionRefused(err error) bool {
 	var errno syscall.Errno
 	if errors.As(err, &errno) {
